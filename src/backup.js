@@ -24,16 +24,23 @@ const interval = r => {
   const base = Date.parse(`${r.date}T00:00:00`)/60000
   return [base+mins(r.start),base+mins(r.end)+(r.end<r.start?1440:0)]
 }
-export function planImport(existing, incoming) {
-  const seen = new Set(existing.map(r=>r.id)), additions = []
-  let duplicates = 0
+const sameRecord = (a,b) => ['title','date','start','end','category','project','note'].every(key=>(a[key]??'')===(b[key]??''))
+export function planImport(existing, incoming, choices={}) {
+  const current = new Map(existing.map(r=>[r.id,r])), seen = new Set(), additions=[], conflicts=[], updates=[]
+  let duplicates=0, fileDuplicates=0
   for (const r of incoming) {
-    if (seen.has(r.id)) { duplicates++; continue }
-    seen.add(r.id); additions.push(r)
+    if(seen.has(r.id)){fileDuplicates++;continue}
+    seen.add(r.id)
+    const old=current.get(r.id)
+    if(!old){additions.push(r);continue}
+    if(sameRecord(old,r)){duplicates++;continue}
+    conflicts.push({current:old,incoming:r})
+    if(choices[r.id]==='incoming')updates.push(r)
   }
-  const combined = [...existing, ...additions]
-  const starts = combined.map(interval).filter(([a,b])=>Number.isFinite(a)&&Number.isFinite(b)).sort((a,b)=>a[0]-b[0])
-  let overlaps = false, end = -Infinity
-  for (const [a,b] of starts) { if (a<end) overlaps=true; end=Math.max(end,b) }
-  return {additions,duplicates,overlaps}
+  const replacements=new Map(updates.map(r=>[r.id,r]))
+  const merged=[...existing.map(r=>replacements.get(r.id)||r),...additions]
+  const starts=merged.map(interval).filter(([a,b])=>Number.isFinite(a)&&Number.isFinite(b)).sort((a,b)=>a[0]-b[0])
+  let overlaps=false,end=-Infinity
+  for(const [a,b] of starts){if(a<end)overlaps=true;end=Math.max(end,b)}
+  return {additions,duplicates,fileDuplicates,conflicts,updates,merged,overlaps}
 }
