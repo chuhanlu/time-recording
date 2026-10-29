@@ -1,3 +1,4 @@
+import {validateTodos} from './todos.js'
 import {parseBackup} from './backup.js'
 import {defaultRewards,REWARD_START,COUPON_MIN_CENTS,couponCost} from './rewards.js'
 const dateValid=d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&Number.isFinite(Date.parse(`${d}T00:00:00Z`))&&new Date(`${d}T00:00:00Z`).toISOString().slice(0,10)===d
@@ -17,5 +18,5 @@ export function parseBundle(text){
  const categories=raw.categories,projects=raw.projects
  for(const [list,type] of [[categories,'category'],[projects,'project']])if(list!==undefined){if(!Array.isArray(list)||!list.length||list.some(x=>!x||typeof x.id!=='string'||!x.id||typeof x.name!=='string'||!x.name.trim()||x.name.length>(type==='category'?40:60))||new Set(list.map(x=>x.id)).size!==list.length||new Set(list.map(x=>x.name)).size!==list.length)throw new Error('分类或科研项目设置无效。')}
  if(categories&&categories.some(c=>!/^#[0-9a-f]{6}$/i.test(c.color)||!['core','research','other'].includes(c.kind)))throw new Error('分类颜色或用途无效。')
- return {records,settings:{goals,rewards,...(categories?{categories}:{}),...(projects?{projects}:{})}}
+ return {records,settings:{goals,rewards,...(raw.todos!==undefined?{todos:validateTodos(raw.todos)}:{}),...(categories?{categories}:{}),...(projects?{projects}:{})}}
 }
