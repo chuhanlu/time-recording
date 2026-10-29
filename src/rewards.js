@@ -32,3 +32,14 @@ export function calculateRewards(records,categories,goals,state,today){
  let weekMinutes=0;for(let date=weekStart;date<=today;date=shiftDay(date,1))weekMinutes+=totals[date]||0
  return {earned,spent,balance:Math.max(0,earned-spent),overdrawn:Math.max(0,spent-earned),streak,todayBonus,weekMinutes,days,totals}
 }
+
+export const COUPON_MIN_CENTS=135000
+export const couponCost=cents=>Math.round(cents/4)
+export function annualCouponAvailable(state,today){return !state.redemptions.some(r=>r.annualCouponYear===today.slice(0,4))}
+export function makeRedemption(item,state,today,useCoupon,balance,id){
+ if(!item||!state.wishlist.some(w=>w.id===item.id))throw new Error('心愿已改变，请重新选择。')
+ if(useCoupon&&(item.cents<COUPON_MIN_CENTS||!annualCouponAvailable(state,today)))throw new Error('年度券不可用：每年一次，且物品标价须至少 $1,350。')
+ const cents=useCoupon?couponCost(item.cents):item.cents
+ if(balance<cents)throw new Error('余额不足。')
+ return {id,wishId:item.id,name:item.name,cents,originalCents:item.cents,date:today,...(useCoupon?{annualCouponYear:today.slice(0,4)}:{})}
+}
