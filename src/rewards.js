@@ -1,32 +1,41 @@
+import {researchAllocation} from './research.js'
 export const REWARD_KEY='time-recording-rewards-v1'
 export const GOAL_KEY='time-recording-goals-v1'
 export const REWARD_START='2026-10-29'
 export const RATE_CENTS=80
+export const CORE_BONUS_PERCENT=10
 export const WEEKLY_MINUTES=35*60
 export const shiftDay=(day,n)=>{const d=new Date(`${day}T12:00:00Z`);d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
 export const money=cents=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(cents/100)
 export const defaultRewards=()=>({startDate:REWARD_START,wishlist:[],redemptions:[],restDays:[]})
 export function loadJSON(key,fallback){try{return JSON.parse(localStorage.getItem(key))||fallback}catch{return fallback}}
 const minute=t=>Number(t.slice(0,2))*60+Number(t.slice(3))
-export function dailyResearch(records,categories){
- const research=new Set(categories.filter(c=>['core','research'].includes(c.kind)).map(c=>c.name)),intervals=new Map()
- for(const r of records){if(!research.has(r.category))continue;let start=minute(r.start),end=minute(r.end);if(end<start)end+=1440;if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue
-  for(let offset=0;offset<2;offset++){const a=Math.max(start,offset*1440)-offset*1440,b=Math.min(end,(offset+1)*1440)-offset*1440;if(b<=a)continue;const date=shiftDay(r.date,offset);if(!intervals.has(date))intervals.set(date,[]);intervals.get(date).push([a,b])}
+export function dailyResearchDetails(records,categories){
+ const kinds=new Map(categories.map(c=>[c.name,c.kind])),intervals=new Map()
+ for(const r of records){const kind=kinds.get(r.category);if(!['core','research'].includes(kind))continue;const start=minute(r.start);let end=minute(r.end);if(end<start)end+=1440;if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue
+  for(let offset=0;offset<2;offset++){const absoluteStart=Math.max(start,offset*1440),a=absoluteStart-offset*1440,b=Math.min(end,(offset+1)*1440)-offset*1440;if(b<=a)continue;const date=shiftDay(r.date,offset),core=researchAllocation(r,kind,absoluteStart-start,b-a).core;if(!intervals.has(date))intervals.set(date,[]);intervals.get(date).push({a,b,ratio:core/(b-a)})}
  }
  const totals={}
- for(const [date,parts] of intervals){parts.sort((a,b)=>a[0]-b[0]);let end=0,total=0;for(const [a,b] of parts){total+=Math.max(0,b-Math.max(a,end));end=Math.max(end,b)}totals[date]=total}
+ for(const [date,parts] of intervals){
+  const points=[...new Set(parts.flatMap(p=>[p.a,p.b]))].sort((a,b)=>a-b);let minutes=0,coreMinutes=0
+  // Overlaps count once; use the highest core share in each covered interval.
+  for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],active=parts.filter(p=>p.a<=a&&p.b>=b);if(!active.length)continue;minutes+=b-a;coreMinutes+=(b-a)*Math.max(...active.map(p=>p.ratio))}
+  totals[date]={minutes,coreMinutes}
+ }
  return totals
 }
+export function dailyResearch(records,categories){return Object.fromEntries(Object.entries(dailyResearchDetails(records,categories)).map(([date,d])=>[date,d.minutes]))}
 export function calculateRewards(records,categories,goals,state,today){
- const totals=dailyResearch(records,categories),rest=new Set(state.restDays),days=[]
+ const details=dailyResearchDetails(records,categories),totals=Object.fromEntries(Object.entries(details).map(([date,d])=>[date,d.minutes])),rest=new Set(state.restDays),days=[]
  let streak=0,earned=0,todayBonus=0
  for(let date=state.startDate;date<=today;date=shiftDay(date,1)){
   const minutes=totals[date]||0,target=goals[date]?.minutes,restDay=rest.has(date),met=!restDay&&target>0&&minutes>=target
   let bonus=0
   if(met){streak++;bonus=Math.min(5,streak-1)}else if(!restDay&&date<today)streak=0
-  const cents=Math.round(minutes*RATE_CENTS*(100+bonus)/6000)
+  const coreMinutes=details[date]?.coreMinutes||0
+  const cents=Math.round((minutes+coreMinutes*CORE_BONUS_PERCENT/100)*RATE_CENTS*(100+bonus)/6000)
   earned+=cents;if(date===today)todayBonus=bonus
-  days.push({date,minutes,target:target||0,restDay,met,bonus,cents,streak})
+  days.push({date,minutes,coreMinutes,target:target||0,restDay,met,bonus,cents,streak})
  }
  const spent=state.redemptions.reduce((s,r)=>s+r.cents,0),weekday=(new Date(`${today}T12:00:00Z`).getUTCDay()+6)%7,weekStart=shiftDay(today,-weekday)
  let weekMinutes=0;for(let date=weekStart;date<=today;date=shiftDay(date,1))weekMinutes+=totals[date]||0
