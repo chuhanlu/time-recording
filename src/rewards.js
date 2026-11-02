@@ -4,6 +4,8 @@ export const GOAL_KEY='time-recording-goals-v1'
 export const REWARD_START='2026-10-29'
 export const RATE_CENTS=80
 export const CORE_BONUS_PERCENT=10
+export const MIN_GOAL_MINUTES=300
+export const effectiveGoal=goal=>Math.max(MIN_GOAL_MINUTES,Number.isFinite(goal?.minutes)?goal.minutes:MIN_GOAL_MINUTES)
 export const WEEKLY_MINUTES=35*60
 export const shiftDay=(day,n)=>{const d=new Date(`${day}T12:00:00Z`);d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
 export const money=cents=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(cents/100)
@@ -29,7 +31,7 @@ export function calculateRewards(records,categories,goals,state,today){
  const details=dailyResearchDetails(records,categories),totals=Object.fromEntries(Object.entries(details).map(([date,d])=>[date,d.minutes])),rest=new Set(state.restDays),days=[]
  let streak=0,earned=0,todayBonus=0
  for(let date=state.startDate;date<=today;date=shiftDay(date,1)){
-  const minutes=totals[date]||0,target=goals[date]?.minutes,restDay=rest.has(date),met=!restDay&&target>0&&minutes>=target
+  const minutes=totals[date]||0,target=effectiveGoal(goals[date]),restDay=rest.has(date),met=!restDay&&target>0&&minutes>=target
   let bonus=0
   if(met){streak++;bonus=Math.min(5,streak-1)}else if(!restDay&&date<today)streak=0
   const coreMinutes=details[date]?.coreMinutes||0
